@@ -42,20 +42,16 @@ shared_library!(ConPtyFuncs,
 );
 
 fn load_conpty() -> ConPtyFuncs {
-    // If the kernel doesn't export these functions then their system is
-    // too old and we cannot run.
-    let kernel = ConPtyFuncs::open(Path::new("kernel32.dll")).expect(
+    // Always use the system kernel32.dll ConPTY implementation.
+    // Do NOT try to sideload conpty.dll — terminal emulators like WezTerm
+    // bundle their own conpty.dll + OpenConsole.exe, and the DLL search order
+    // can pick those up when psmux runs inside such a terminal.  Using a
+    // foreign conpty.dll causes blank panes and broken I/O because the
+    // bundled OpenConsole.exe may not be compatible with our ConPTY flags
+    // (PASSTHROUGH_MODE, WIN32_INPUT_MODE, etc.).
+    ConPtyFuncs::open(Path::new("kernel32.dll")).expect(
         "this system does not support conpty.  Windows 10 October 2018 or newer is required",
-    );
-
-    // We prefer to use a sideloaded conpty.dll and openconsole.exe host deployed
-    // alongside the application.  We check for this after checking for kernel
-    // support so that we don't try to proceed and do something crazy.
-    if let Ok(sideloaded) = ConPtyFuncs::open(Path::new("conpty.dll")) {
-        sideloaded
-    } else {
-        kernel
-    }
+    )
 }
 
 lazy_static! {
