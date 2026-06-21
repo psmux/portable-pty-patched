@@ -40,10 +40,11 @@ impl WinChild {
 
     fn do_kill(&mut self) -> IoResult<()> {
         let proc = self.proc.lock().unwrap().try_clone().unwrap();
+        // TerminateProcess returns a nonzero BOOL on success, 0 on failure. Capture the OS
+        // error only on the failure path so a successful kill never returns a bogus error.
         let res = unsafe { TerminateProcess(proc.as_raw_handle() as _, 1) };
-        let err = IoError::last_os_error();
-        if res != 0 {
-            Err(err)
+        if res == 0 {
+            Err(IoError::last_os_error())
         } else {
             Ok(())
         }
@@ -69,10 +70,11 @@ pub struct WinChildKiller {
 
 impl ChildKiller for WinChildKiller {
     fn kill(&mut self) -> IoResult<()> {
+        // TerminateProcess returns a nonzero BOOL on success, 0 on failure. Capture the OS
+        // error only on the failure path so a successful kill never returns a bogus error.
         let res = unsafe { TerminateProcess(self.proc.as_raw_handle() as _, 1) };
-        let err = IoError::last_os_error();
-        if res != 0 {
-            Err(err)
+        if res == 0 {
+            Err(IoError::last_os_error())
         } else {
             Ok(())
         }
