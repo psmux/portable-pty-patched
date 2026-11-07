@@ -147,3 +147,52 @@ impl std::future::Future for WinChild {
         }
     }
 }
+
+#[cfg(test)]
+mod kill_result_tests {
+    use super::*;
+    use std::os::windows::io::{FromRawHandle, IntoRawHandle};
+    use std::process::{Command, Stdio};
+    use winapi::um::winnt::{PROCESS_QUERY_LIMITED_INFORMATION, SYNCHRONIZE};
+
+    fn spawn_sleeper() -> std::process::Child {
+        Command::new("ping")
+            .args(["-n", "30", "127.0.0.1"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn sleeper")
+    }
+
+    /// Killing a live child must report success (TerminateProcess returned nonzero).
+    #[test]
+    fn win_child_killer_kill_returns_ok_on_success() {
+        let child = spawn_sleeper();
+        let proc = unsafe { OwnedHandle::from_raw_handle(child.into_raw_handle()) };
+        let mut killer = WinChildKiller { proc };
+        let res = killer.kill();
+        assert!(res.is_ok(), "successful kill reported as error: {:?}", res);
+    }
+
+    /// Killing through a handle without PROCESS_TERMINATE fails in the OS,
+    /// so kill must report an error instead of Ok.
+    #[test]
+    fn win_child_killer_kill_returns_err_on_failure() {
+        let mut child = spawn_sleeper();
+        let raw = unsafe {
+            OpenProcess(
+                SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+                0,
+                child.id(),
+            )
+        };
+        assert!(!raw.is_null(), "OpenProcess failed");
+        let proc = unsafe { OwnedHandle::from_raw_handle(raw as _) };
+        let mut killer = WinChildKiller { proc };
+        let res = killer.kill();
+        child.kill().ok();
+        child.wait().ok();
+        assert!(res.is_err(), "failed kill reported as success");
+    }
+}
